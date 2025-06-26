@@ -25,3 +25,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Relay server running on port ${PORT}`);
 });
+app.get('/', (req, res) => {
+  res.send('Relay server is up and running.');
+});
