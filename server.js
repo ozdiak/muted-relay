@@ -4,22 +4,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-let messages = {};
-let waitingClients = {};
-
-function filterMessage(message) {
-    const curseWords = [
-        "asshole", "bastard", "bitch", "boner", "cock",
-        "cunt", "cum", "dick", "dildo", "die", "douche",
-        "fag", "faggot", "fuck", "gay", "hitler", "kill yourself", "kms",
-        "kys", "nazi", "nigger", "nude", "penis", "piss", "porn", "prick",
-        "pussy", "rape", "retard", "sex", "slut", "suicide", "twat",
-        "vagina", "whore", "ip", "bitchass", "nigga", "niga", "nigg",
-        "nig", "cumface", "suck balls", "suck ballz"
-    ];
-    const regex = new RegExp(`\\b(${curseWords.join("|")})\\b`, "gi");
-    return message.replace(regex, m => m[0] + "*".repeat(m.length - 1));
-}
+let messages = {}; // { receiverName: [ {sender, message} ] }
+let waitingClients = {}; // { receiverName: [ res, ... ] }
 
 app.post("/send", (req, res) => {
     const { sender, target, message } = req.body;
@@ -27,17 +13,14 @@ app.post("/send", (req, res) => {
         return res.status(400).send("Missing sender, target, or message");
     }
 
-    const filtered = filterMessage(message);
-const formattedText = `[muted] ${sender} » ${filtered}`;
+    if (!messages[target]) messages[target] = [];
+    messages[target].push({ sender, message });
 
-messages[target].push({
-    sender,
-    message,
-    formattedText
-});
-
-    if (waitingClients[target]?.length) {
-        waitingClients[target].forEach(r => r.json(messages[target]));
+    // If client(s) are waiting, send message immediately
+    if (waitingClients[target] && waitingClients[target].length > 0) {
+        waitingClients[target].forEach(clientRes => {
+            clientRes.json(messages[target]);
+        });
         waitingClients[target] = [];
         messages[target] = [];
     }
@@ -46,25 +29,33 @@ messages[target].push({
 });
 
 app.get("/poll/:receiver", (req, res) => {
-    const rec = req.params.receiver;
-    if (!messages[rec]) messages[rec] = [];
+    const receiver = req.params.receiver;
+    if (!messages[receiver]) messages[receiver] = [];
 
-    if (messages[rec].length > 0) {
-        const out = messages[rec];
-        messages[rec] = [];
-        res.json(out);
+    if (messages[receiver].length > 0) {
+        const userMessages = messages[receiver];
+        messages[receiver] = [];
+        res.json(userMessages);
     } else {
-        if (!waitingClients[rec]) waitingClients[rec] = [];
-        waitingClients[rec].push(res);
+        // No messages: hold connection open up to 10 seconds
+        if (!waitingClients[receiver]) waitingClients[receiver] = [];
+        waitingClients[receiver].push(res);
+
+        // Timeout to end the request after 10 seconds if no messages arrive
         setTimeout(() => {
-            const idx = waitingClients[rec].indexOf(res);
-            if (idx > -1) {
-                waitingClients[rec].splice(idx, 1);
-                res.json([]);
+            const index = waitingClients[receiver].indexOf(res);
+            if (index !== -1) {
+                waitingClients[receiver].splice(index, 1);
+                res.json([]); // no messages
             }
         }, 10000);
     }
 });
 
-app.get("/", (req, res) => res.send("Relay server online."));
-app.listen(PORT, () => console.log(`Running on port ${PORT}`));
+app.get("/", (req, res) => {
+    res.send("Relay server online.");
+});
+
+app.listen(PORT, () => {
+    console.log(`Relay server running on port ${PORT}`);
+});
