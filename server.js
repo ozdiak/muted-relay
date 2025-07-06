@@ -5,6 +5,8 @@ const PORT = process.env.PORT || 3000;
 
 const filter = new Filter({ firstLetter: true });
 
+filter.removeWords("ass", "butt", "damn", "", "", "", "", "");
+
 app.use(express.json());
 
 let messages = {};
