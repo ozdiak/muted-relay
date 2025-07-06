@@ -27,10 +27,12 @@ const formattedText = `[muted] ${sender} » ${filtered}`;
 messages[target].push({ sender, message: filtered, formattedText });
 
     if (waitingClients[target]?.length) {
-        waitingClients[target].forEach(clientRes => clientRes.json(messages[target]));
-        waitingClients[target] = [];
-        messages[target] = [];
-    }
+    const toSend = messages[target];
+    messages[target] = [];
+    waitingClients[target].forEach(clientRes => clientRes.json(toSend));
+    waitingClients[target] = [];
+}
+
 
     res.send("OK");
 });
