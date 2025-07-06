@@ -1,14 +1,14 @@
 const express = require("express");
-const Filter = require("bad-words");
+const Filter = require("bad-words-plus");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const filter = new Filter();
+const filter = new Filter({ firstLetter: true });
 
 app.use(express.json());
 
-let messages = {};       // { receiverName: [ { sender, message, formattedText } ] }
-let waitingClients = {}; // { receiverName: [ res, ... ] }
+let messages = {};
+let waitingClients = {};
 
 // === POST /send ===
 app.post("/send", (req, res) => {
@@ -17,11 +17,11 @@ app.post("/send", (req, res) => {
         return res.status(400).send("Missing sender, target, or message");
     }
 
-    const filtered = filter.clean(message);
-    const formattedText = `[muted] ${sender} » ${filtered}`;
+const filtered = filter.clean(message); 
+const formattedText = `[muted] ${sender} » ${filtered}`;
 
     if (!messages[target]) messages[target] = [];
-    messages[target].push({ sender, message: filtered, formattedText });
+messages[target].push({ sender, message: filtered, formattedText });
 
     if (waitingClients[target]?.length) {
         waitingClients[target].forEach(clientRes => clientRes.json(messages[target]));
@@ -32,7 +32,7 @@ app.post("/send", (req, res) => {
     res.send("OK");
 });
 
-// === GET /poll/:receiver ===
+
 app.get("/poll/:receiver", (req, res) => {
     const receiver = req.params.receiver;
     if (!messages[receiver]) messages[receiver] = [];
@@ -55,7 +55,7 @@ app.get("/poll/:receiver", (req, res) => {
     }
 });
 
-// === Root route ===
+
 app.get("/", (req, res) => {
     res.send("Relay server online.");
 });
