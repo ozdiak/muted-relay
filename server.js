@@ -1,68 +1,47 @@
 const express = require("express");
+const { Server } = require("socket.io");
 const Filter = require("bad-words-plus");
 const app = express();
-const PORT = process.env.PORT || 3000;
+const httpServer = require("http").createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+  },
+});
 
 const filter = new Filter({ firstLetter: true });
-
-filter.removeWords("ass", "butt", "damn", "", "", "", "", "");
+filter.removeWords("ass", "butt", "damn");
 
 app.use(express.json());
 
 let messages = {};
-let waitingClients = {};
 
-// === POST /send ===
-app.post("/send", (req, res) => {
-    const { sender, target, message } = req.body;
-    if (!sender || !target || !message) {
-        return res.status(400).send("Missing sender, target, or message");
-    }
+io.on("connection", (socket) => {
+  console.log(`Client connected: ${socket.id}`);
 
-const filtered = filter.clean(message); 
-const formattedText = `[muted] ${sender} » ${filtered}`;
+  socket.on("send_message", (data) => {
+    const { sender, target, message } = data;
+    if (!sender || !target || !message) return;
+
+    const filtered = filter.clean(message);
+    const formattedText = `[muted] ${sender} » ${filtered}`;
 
     if (!messages[target]) messages[target] = [];
-messages[target].push({ sender, message: filtered, formattedText });
+    messages[target].push({ sender, message: filtered, formattedText });
 
-    if (waitingClients[target]?.length) {
-        waitingClients[target].forEach(clientRes => clientRes.json(messages[target]));
-        waitingClients[target] = [];
-        messages[target] = [];
-    }
+    io.to(target).emit("new_message", messages[target]);
+  });
 
-    res.send("OK");
+  socket.on("join", (target) => {
+    socket.join(target);
+    console.log(`Client ${socket.id} joined room: ${target}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`Client disconnected: ${socket.id}`);
+  });
 });
 
-
-app.get("/poll/:receiver", (req, res) => {
-    const receiver = req.params.receiver;
-    if (!messages[receiver]) messages[receiver] = [];
-
-    if (messages[receiver].length > 0) {
-        const userMessages = messages[receiver];
-        messages[receiver] = [];
-        res.json(userMessages);
-    } else {
-        if (!waitingClients[receiver]) waitingClients[receiver] = [];
-        waitingClients[receiver].push(res);
-
-        setTimeout(() => {
-            const ix = waitingClients[receiver].indexOf(res);
-            if (ix !== -1) {
-                waitingClients[receiver].splice(ix, 1);
-                res.json([]); // no messages
-            }
-        }, 10000);
-    }
-});
-
-
-app.get("/", (req, res) => {
-    res.send("Relay server online.");
-});
-
-// === Start server ===
-app.listen(PORT, () => {
-    console.log(`Relay server running on port ${PORT}`);
+httpServer.listen(3000, () => {
+  console.log("Relay server running on port 3000");
 });
