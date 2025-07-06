@@ -1,26 +1,30 @@
 const express = require("express");
+const Filter = require("bad-words");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const filter = new Filter();
+
 app.use(express.json());
 
-let messages = {}; // { receiverName: [ {sender, message} ] }
+let messages = {};       // { receiverName: [ { sender, message, formattedText } ] }
 let waitingClients = {}; // { receiverName: [ res, ... ] }
 
+// === POST /send ===
 app.post("/send", (req, res) => {
     const { sender, target, message } = req.body;
     if (!sender || !target || !message) {
         return res.status(400).send("Missing sender, target, or message");
     }
 
-    if (!messages[target]) messages[target] = [];
-    messages[target].push({ sender, message });
+    const filtered = filter.clean(message);
+    const formattedText = `[muted] ${sender} » ${filtered}`;
 
-    // If client(s) are waiting, send message immediately
-    if (waitingClients[target] && waitingClients[target].length > 0) {
-        waitingClients[target].forEach(clientRes => {
-            clientRes.json(messages[target]);
-        });
+    if (!messages[target]) messages[target] = [];
+    messages[target].push({ sender, message: filtered, formattedText });
+
+    if (waitingClients[target]?.length) {
+        waitingClients[target].forEach(clientRes => clientRes.json(messages[target]));
         waitingClients[target] = [];
         messages[target] = [];
     }
@@ -28,6 +32,7 @@ app.post("/send", (req, res) => {
     res.send("OK");
 });
 
+// === GET /poll/:receiver ===
 app.get("/poll/:receiver", (req, res) => {
     const receiver = req.params.receiver;
     if (!messages[receiver]) messages[receiver] = [];
@@ -37,25 +42,25 @@ app.get("/poll/:receiver", (req, res) => {
         messages[receiver] = [];
         res.json(userMessages);
     } else {
-        // No messages: hold connection open up to 10 seconds
         if (!waitingClients[receiver]) waitingClients[receiver] = [];
         waitingClients[receiver].push(res);
 
-        // Timeout to end the request after 10 seconds if no messages arrive
         setTimeout(() => {
-            const index = waitingClients[receiver].indexOf(res);
-            if (index !== -1) {
-                waitingClients[receiver].splice(index, 1);
+            const ix = waitingClients[receiver].indexOf(res);
+            if (ix !== -1) {
+                waitingClients[receiver].splice(ix, 1);
                 res.json([]); // no messages
             }
         }, 10000);
     }
 });
 
+// === Root route ===
 app.get("/", (req, res) => {
     res.send("Relay server online.");
 });
 
+// === Start server ===
 app.listen(PORT, () => {
     console.log(`Relay server running on port ${PORT}`);
 });
