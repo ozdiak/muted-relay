@@ -28,10 +28,13 @@ app.post("/send", (req, res) => {
     }
 
     const filtered = filterMessage(message);
-    const formatted = `[muted] ${sender} » ${filtered}`;
+const formattedText = `[muted] ${sender} » ${filtered}`;
 
-    if (!messages[target]) messages[target] = [];
-    messages[target].push({ formatted });
+messages[target].push({
+    sender,
+    message,
+    formattedText
+});
 
     if (waitingClients[target]?.length) {
         waitingClients[target].forEach(r => r.json(messages[target]));
